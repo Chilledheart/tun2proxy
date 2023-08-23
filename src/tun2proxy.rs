@@ -183,7 +183,7 @@ struct ConnectionState {
     udp_acco_expiry: Option<::std::time::Instant>,
     udp_socket: Option<UdpSocket>,
     udp_token: Option<Token>,
-    udp_origin_dst: Option<SocketAddr>,
+    origin_dst: SocketAddr,
     udp_data_cache: LinkedList<Vec<u8>>,
     udp_over_tcp_expiry: Option<::std::time::Instant>,
 }
@@ -507,8 +507,7 @@ impl<'a> TunToProxy<'a> {
 
             let tcp_proxy_handler = manager.new_tcp_proxy(info, false)?;
             let server_addr = manager.get_server_addr();
-            let mut state = self.create_new_tcp_connection_state(server_addr, origin_dst, tcp_proxy_handler, false)?;
-            state.udp_origin_dst = Some(origin_dst);
+            let state = self.create_new_tcp_connection_state(server_addr, origin_dst, tcp_proxy_handler, false)?;
             self.connection_map.insert(info.clone(), state);
 
             // TODO: Move this 3 lines to the function end?
@@ -605,7 +604,7 @@ impl<'a> TunToProxy<'a> {
         }
 
         // Write to client
-        let src = state.udp_origin_dst.ok_or("Expected UDP addr")?;
+        let src = state.origin_dst;
         while let Some(packet) = to_send.pop_front() {
             self.send_udp_packet_to_client(src, info.src, &packet)?;
         }
@@ -654,8 +653,7 @@ impl<'a> TunToProxy<'a> {
             log::info!("UDP associate session {} ({})", info, origin_dst);
             let tcp_proxy_handler = manager.new_tcp_proxy(info, true)?;
             let server_addr = manager.get_server_addr();
-            let mut state = self.create_new_tcp_connection_state(server_addr, origin_dst, tcp_proxy_handler, true)?;
-            state.udp_origin_dst = Some(origin_dst);
+            let state = self.create_new_tcp_connection_state(server_addr, origin_dst, tcp_proxy_handler, true)?;
             self.connection_map.insert(info.clone(), state);
 
             self.expect_smoltcp_send()?;
@@ -734,17 +732,15 @@ impl<'a> TunToProxy<'a> {
             } else if info.protocol == IpProtocol::Udp {
                 let port = info.dst.port();
                 let payload = &frame[payload_offset..payload_offset + payload_size];
-                if let (Some(virtual_dns), true) = (&mut self.options.virtual_dns, port == DNS_PORT) {
+                if self.options.virtual_dns.is_some() && port == DNS_PORT {
                     log::info!("DNS query via virtual DNS {} ({})", info, origin_dst);
+                    let virtual_dns = self.options.virtual_dns.as_mut().ok_or("")?;
                     let response = virtual_dns.receive_query(payload)?;
                     self.send_udp_packet_to_client(origin_dst, info.src, response.as_slice())?;
+                } else if self.options.dns_over_tcp && port == DNS_PORT {
+                    self.process_incoming_dns_over_tcp_packets(&manager, &info, origin_dst, payload)?;
                 } else {
-                    // Another UDP packet
-                    if self.options.dns_over_tcp && origin_dst.port() == DNS_PORT {
-                        self.process_incoming_dns_over_tcp_packets(&manager, &info, origin_dst, payload)?;
-                    } else {
-                        self.process_incoming_udp_packets(&manager, &info, origin_dst, payload)?;
-                    }
+                    self.process_incoming_udp_packets(&manager, &info, origin_dst, payload)?;
                 }
             } else {
                 log::warn!("Unsupported protocol: {} ({})", info, origin_dst);
@@ -803,7 +799,7 @@ impl<'a> TunToProxy<'a> {
             udp_acco_expiry: expiry,
             udp_socket,
             udp_token,
-            udp_origin_dst: None,
+            origin_dst: dst,
             udp_data_cache: LinkedList::new(),
             udp_over_tcp_expiry: None,
         };
@@ -971,7 +967,7 @@ impl<'a> TunToProxy<'a> {
         }
 
         // Write to client
-        let src = state.udp_origin_dst.ok_or("udp address")?;
+        let src = state.origin_dst;
         while let Some(packet) = to_send.pop_front() {
             self.send_udp_packet_to_client(src, info.src, &packet)?;
         }
