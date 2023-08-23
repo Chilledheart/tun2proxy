@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
+use moka::sync::Cache;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
+    time::Duration,
 };
 use trust_dns_proto::{
-    op::{Message, ResponseCode},
+    op::{Message, Query, ResponseCode},
     rr::{record_type::RecordType, Name, RData, Record},
 };
 
@@ -112,4 +114,23 @@ pub fn addr_is_private(addr: &SocketAddr) -> bool {
         SocketAddr::V4(addr) => addr_v4_is_private(addr.ip()),
         SocketAddr::V6(_) => false,
     }
+}
+
+pub(crate) fn create_dns_cache() -> Cache<Vec<Query>, Message> {
+    Cache::builder()
+        .time_to_live(Duration::from_secs(30 * 60))
+        .time_to_idle(Duration::from_secs(5 * 60))
+        .build()
+}
+
+pub(crate) fn dns_cache_get_message(cache: &Cache<Vec<Query>, Message>, message: &Message) -> Option<Message> {
+    if let Some(mut cached_message) = cache.get(&message.queries().to_vec()) {
+        cached_message.set_id(message.id());
+        return Some(cached_message);
+    }
+    None
+}
+
+pub(crate) fn dns_cache_put_message(cache: &Cache<Vec<Query>, Message>, message: &Message) {
+    cache.insert(message.queries().to_vec(), message.clone());
 }

@@ -1,5 +1,6 @@
 use crate::{dns, error::Error, error::Result, virtdevice::VirtualTunDevice, NetworkInterface, Options};
 use mio::{event::Event, net::TcpStream, net::UdpSocket, unix::SourceFd, Events, Interest, Poll, Token};
+use moka::sync::Cache;
 use smoltcp::{
     iface::{Config, Interface, SocketHandle, SocketSet},
     phy::{Device, Medium, RxToken, TunTapInterface, TxToken},
@@ -18,6 +19,7 @@ use std::{
     rc::Rc,
     str::FromStr,
 };
+use trust_dns_proto::op::{Message, Query};
 
 #[derive(Hash, Clone, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub(crate) struct ConnectionInfo {
@@ -220,6 +222,7 @@ pub struct TunToProxy<'a> {
     write_sockets: HashSet<Token>,
     _exit_receiver: mio::unix::pipe::Receiver,
     exit_sender: mio::unix::pipe::Sender,
+    dns_cache: Cache<Vec<Query>, Message>,
 }
 
 impl<'a> TunToProxy<'a> {
@@ -254,6 +257,8 @@ impl<'a> TunToProxy<'a> {
         iface.routes_mut().add_default_ipv6_route(gateway6.into())?;
         iface.set_any_ip(true);
 
+        let dns_cache = dns::create_dns_cache();
+
         let tun = Self {
             tun,
             poll,
@@ -267,6 +272,7 @@ impl<'a> TunToProxy<'a> {
             write_sockets: HashSet::default(),
             _exit_receiver: exit_receiver,
             exit_sender,
+            dns_cache,
         };
         Ok(tun)
     }
@@ -488,7 +494,13 @@ impl<'a> TunToProxy<'a> {
         origin_dst: SocketAddr,
         payload: &[u8],
     ) -> Result<()> {
-        _ = dns::parse_data_to_dns_message(payload, false)?;
+        let message = dns::parse_data_to_dns_message(payload, false)?;
+        if let Some(cached_message) = dns::dns_cache_get_message(&self.dns_cache, &message) {
+            log::debug!("DNS query package for \"{}\" hit cache", info);
+            let data = cached_message.to_vec()?;
+            self.send_udp_packet_to_client(origin_dst, info.src, &data)?;
+            return Ok(());
+        }
 
         if !self.connection_map.contains_key(info) {
             log::info!("DNS over TCP {} ({})", info, origin_dst);
@@ -583,6 +595,8 @@ impl<'a> TunToProxy<'a> {
                 dns::remove_ipv6_entries(&mut message);
             }
 
+            dns::dns_cache_put_message(&self.dns_cache, &message);
+
             to_send.push_back(message.to_vec()?);
             if len + 2 == buf.len() {
                 break;
@@ -625,6 +639,17 @@ impl<'a> TunToProxy<'a> {
         origin_dst: SocketAddr,
         payload: &[u8],
     ) -> Result<()> {
+        if info.dst.port() == DNS_PORT {
+            let message = dns::parse_data_to_dns_message(payload, false)?;
+            if let Some(cached_message) = dns::dns_cache_get_message(&self.dns_cache, &message) {
+                log::debug!("DNS query package for \"{}\" hit cache", info);
+                let data = cached_message.to_vec()?;
+                let src = SocketAddr::try_from(&info.dst)?;
+                self.send_udp_packet_to_client(src, info.src, &data)?;
+                return Ok(());
+            }
+        }
+
         if !self.connection_map.contains_key(info) {
             log::info!("UDP associate session {} ({})", info, origin_dst);
             let tcp_proxy_handler = manager.new_tcp_proxy(info, true)?;
@@ -934,6 +959,7 @@ impl<'a> TunToProxy<'a> {
                     if !self.options.ipv6_enabled {
                         dns::remove_ipv6_entries(&mut message);
                     }
+                    dns::dns_cache_put_message(&self.dns_cache, &message);
                     message.to_vec()?
                 } else {
                     buf[header.len()..].to_vec()
