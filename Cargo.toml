@@ -27,7 +27,7 @@ nix = { version = "0.27", features = [
     "user",
 ] }
 prctl = "1.0"
-smoltcp = { version = "0.10", features = ["std", "phy-tuntap_interface"] }
+smoltcp = { git = "https://github.com/blechschmidt/smoltcp", branch="main", features = ["std", "phy-tuntap_interface"] }
 socks5-impl = { version = "0.5", default-features = false }
 thiserror = "1.0"
 trust-dns-proto = "0.23"
