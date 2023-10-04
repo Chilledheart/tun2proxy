@@ -11,6 +11,7 @@ use std::{
 };
 
 mod android;
+mod apple;
 mod dns;
 pub mod error;
 mod http;

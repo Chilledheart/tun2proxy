@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use crate::apple::AppleInterface;
 use crate::{dns, error::Error, error::Result, virtdevice::VirtualTunDevice, NetworkInterface, Options};
 #[cfg(target_family = "unix")]
 use mio::unix::SourceFd;
 use mio::{event::Event, net::TcpStream, net::UdpSocket, Events, Interest, Poll, Token};
 #[cfg(not(target_family = "unix"))]
 use smoltcp::phy::DeviceCapabilities;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use smoltcp::phy::RawSocket;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use smoltcp::phy::TunTapInterface;
 #[cfg(target_family = "unix")]
@@ -216,7 +216,7 @@ pub struct TunToProxy<'a> {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     tun: TunTapInterface,
     #[cfg(any(target_os = "macos", target_os = "ios"))]
-    tun: RawSocket,
+    tun: AppleInterface,
     poll: Poll,
     iface: Interface,
     connection_map: HashMap<ConnectionInfo, ConnectionState>,
@@ -241,10 +241,13 @@ impl<'a> TunToProxy<'a> {
         };
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
-        let tun = match _interface {
-            NetworkInterface::Named(name) => RawSocket::new(name.as_str(), Medium::Ip)?,
-            NetworkInterface::Fd(_fd) => panic!("Not supported"),
+        let mut tun = match _interface {
+            NetworkInterface::Named(name) => AppleInterface::new(name.as_str(), Medium::Ip)?,
+            NetworkInterface::Fd(fd) => AppleInterface::from_fd(*fd, Medium::Ip)?,
         };
+
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        tun.setup_config(options.bypass, options.dns_addr)?;
 
         let poll = Poll::new()?;
 
