@@ -777,9 +777,15 @@ impl<'a> TunToProxy<'a> {
         proxy_handler: Box<dyn ProxyHandler>,
         udp_associate: bool,
     ) -> Result<ConnectionState> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         let mut socket = tcp::Socket::new(
             tcp::SocketBuffer::new(vec![0; 1024 * 128]),
             tcp::SocketBuffer::new(vec![0; 1024 * 128]),
+        );
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "windows"))]
+        let mut socket = tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; 1024]),
+            tcp::SocketBuffer::new(vec![0; 1024]),
         );
         socket.set_ack_delay(None);
         socket.listen(dst)?;

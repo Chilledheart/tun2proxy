@@ -78,6 +78,10 @@ impl Device for AppleInterface {
         match self.lower.borrow_mut().recv(&mut buffer[..]) {
             Ok(size) => {
                 buffer.resize(size, 0);
+                #[cfg(target_os = "macos")]
+                {
+                    buffer = buffer[4..size].to_vec();
+                }
                 let rx = RxToken { buffer };
                 let tx = TxToken {
                     lower: self.lower.clone(),
@@ -120,8 +124,21 @@ impl phy::TxToken for TxToken {
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        let mut buffer = vec![0; len];
-        let result = f(&mut buffer);
+        let mut buffer: Vec<u8>;
+        let result: R;
+        #[cfg(not(target_os = "macos"))]
+        {
+            buffer = vec![0; len];
+            result = f(&mut buffer);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            buffer = vec![0; len + 4];
+            result = f(&mut buffer[4..]);
+            use smoltcp::wire::IpVersion;
+            let ver = IpVersion::of_packet(&buffer[4..]).unwrap_or(IpVersion::Ipv4);
+            buffer[3] = if ver == IpVersion::Ipv4 { 0x02 } else { 0x1E }; // AF: 2 for AF_INET, 1E for AF_INET6
+        }
         match self.lower.borrow_mut().send(&buffer[..]) {
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
