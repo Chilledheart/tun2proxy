@@ -20,6 +20,8 @@ mod socks;
 mod tun2proxy;
 mod virtdevice;
 mod virtdns;
+#[cfg(target_os = "windows")]
+mod wintuninterface;
 
 #[derive(Clone, Debug)]
 pub struct Proxy {
@@ -104,6 +106,7 @@ pub struct Options {
     dns_addr: Option<std::net::IpAddr>,
     ipv6_enabled: bool,
     bypass: Option<std::net::IpAddr>,
+    pub setup: bool,
 }
 
 impl Options {
