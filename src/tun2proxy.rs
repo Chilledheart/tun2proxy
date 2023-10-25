@@ -253,7 +253,9 @@ impl<'a> TunToProxy<'a> {
         };
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
-        tun.setup_config(options.bypass, options.dns_addr)?;
+        if options.setup {
+            tun.setup_config(options.bypass, options.dns_addr)?;
+        }
 
         #[cfg(target_os = "windows")]
         let mut tun = match _interface {
