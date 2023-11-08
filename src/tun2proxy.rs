@@ -701,11 +701,15 @@ impl<'a> TunToProxy<'a> {
         Ok(())
     }
 
-    fn limited_read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo) -> Result<usize, Error> {
+    // Returns whether the connection was closed.
+    fn limited_read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo) -> Result<bool, Error> {
         let e = "connection state not found";
         let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
         let smoltcp_socket = self.sockets.get_mut::<tcp::Socket>(state.smoltcp_handle);
         let buffer_capacity = smoltcp_socket.send_capacity() - smoltcp_socket.send_queue();
+        if buffer_capacity == 0 {
+            return Ok(false);
+        }
 
         let mut buf = vec![0u8; buffer_capacity];
         let mut read = 0;
@@ -739,14 +743,14 @@ impl<'a> TunToProxy<'a> {
 
         let data_event = IncomingDataEvent {
             direction: IncomingDirection::FromServer,
-            buffer: &buf,
+            buffer: &buf[0..read],
         };
         if let Err(error) = state.proxy_handler.push_data(data_event) {
             log::error!("{}", error);
             self.remove_connection(&conn_info.clone())?;
-            return Ok(read);
+            return Ok(true);
         }
-        Ok(read)
+        Ok(false)
     }
 
     fn process_incoming_tcp_packets(
@@ -1122,7 +1126,7 @@ impl<'a> TunToProxy<'a> {
                     self.receive_dns_over_tcp_packet_and_write_to_client(&conn_info)?;
                     return Ok(());
                 } else {
-                    let read = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
+                    let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
 
                     let e = "connection state not found";
                     let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
@@ -1149,7 +1153,7 @@ impl<'a> TunToProxy<'a> {
                         return Ok(());
                     }
 
-                    if read == 0 || event.is_read_closed() {
+                    if smoltcp_closed || event.is_read_closed() {
                         state.wait_read = false;
                         state.close_state |= SERVER_WRITE_CLOSED;
                         Self::update_mio_socket_interest(&mut self.poll, state)?;
