@@ -704,7 +704,7 @@ impl<'a> TunToProxy<'a> {
     // Returns whether the connection was closed.
     fn limited_read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo) -> Result<bool, Error> {
         let e = "connection state not found";
-        let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
+        let state = self.connection_map.get_mut(conn_info).ok_or(e)?;
         let smoltcp_socket = self.sockets.get_mut::<tcp::Socket>(state.smoltcp_handle);
         let buffer_capacity = smoltcp_socket.send_capacity() - smoltcp_socket.send_queue();
         if buffer_capacity == 0 {
