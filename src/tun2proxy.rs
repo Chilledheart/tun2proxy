@@ -171,7 +171,8 @@ fn connection_tuple(frame: &[u8]) -> Result<(ConnectionInfo, bool, usize, usize)
 const SERVER_WRITE_CLOSED: u8 = 1;
 const CLIENT_WRITE_CLOSED: u8 = 2;
 
-const UDP_ASSO_TIMEOUT: u64 = 10; // seconds
+const UDP_ASSO_TIMEOUT: u64 = 10;
+// seconds
 const DNS_PORT: u16 = 53;
 const IP_PACKAGE_MAX_SIZE: usize = 0xFFFF;
 
@@ -707,7 +708,15 @@ impl<'a> TunToProxy<'a> {
         let state = self.connection_map.get_mut(conn_info).ok_or(e)?;
         let smoltcp_socket = self.sockets.get_mut::<tcp::Socket>(state.smoltcp_handle);
         let buffer_capacity = smoltcp_socket.send_capacity() - smoltcp_socket.send_queue();
-        if buffer_capacity == 0 {
+        if buffer_capacity == 0
+            || state
+                .proxy_handler
+                .data_len(Direction::Incoming(IncomingDirection::FromServer))
+                + state
+                    .proxy_handler
+                    .data_len(Direction::Outgoing(OutgoingDirection::ToClient))
+                > IP_PACKAGE_MAX_SIZE
+        {
             return Ok(false);
         }
 
