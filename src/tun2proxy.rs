@@ -791,7 +791,8 @@ impl<'a> TunToProxy<'a> {
         self.write_to_server(info)?;
 
         // Assume that there was an ACK that consumed some of the smoltcp TcpSocket's
-        // tx buffer. Read the next chunk from the server socket.
+        // tx buffer. Read the next chunk from the server socket. If there wasn't an ACK,
+        // calling this is fine, too. Reading from the mio socket will just return EWOULDBLOCK.
         self.limited_read_from_smoltcp_client(info)?;
         Ok(())
     }
