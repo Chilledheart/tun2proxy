@@ -171,8 +171,7 @@ fn connection_tuple(frame: &[u8]) -> Result<(ConnectionInfo, bool, usize, usize)
 const SERVER_WRITE_CLOSED: u8 = 1;
 const CLIENT_WRITE_CLOSED: u8 = 2;
 
-const UDP_ASSO_TIMEOUT: u64 = 10;
-// seconds
+const UDP_ASSO_TIMEOUT: u64 = 10; // seconds
 const DNS_PORT: u16 = 53;
 const IP_PACKAGE_MAX_SIZE: usize = 0xFFFF;
 
@@ -1267,6 +1266,9 @@ impl<'a> TunToProxy<'a> {
                 }
                 break 'exit_point Err(Error::from(err));
             }
+
+            log::info!("Poll events: {}", events.iter().count());
+
             for event in events.iter() {
                 match event.token() {
                     EXIT_TOKEN => {
@@ -1285,6 +1287,8 @@ impl<'a> TunToProxy<'a> {
             self.send_to_smoltcp()?;
             self.clearup_expired_connection()?;
             self.clearup_expired_dns_over_tcp()?;
+
+            log::info!("{} connections", self.connection_map.len());
         };
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         handle.join().unwrap();

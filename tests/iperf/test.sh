@@ -9,6 +9,9 @@ netns="test"
 dante="danted"
 tun2proxy="${SCRIPT_DIR}/../../target/release/tun2proxy"
 
+sudo systemctl stop danted
+sleep 1
+
 ip netns add "$netns"
 
 ip link add veth0 type veth peer name veth0 netns "$netns"
