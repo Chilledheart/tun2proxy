@@ -801,7 +801,7 @@ impl<'a> TunToProxy<'a> {
         // Assume that there was an ACK that consumed some of the smoltcp TcpSocket's
         // tx buffer. Read the next chunk from the server socket. If there wasn't an ACK,
         // calling this is fine, too. Reading from the mio socket will just return EWOULDBLOCK.
-        self.limited_read_from_smoltcp_client(info)?;
+        self.read_from_smoltcp_client(info, false)?;
         Ok(())
     }
 
@@ -1104,6 +1104,47 @@ impl<'a> TunToProxy<'a> {
         Ok(())
     }
 
+    fn read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo, read_closed: bool) -> Result<(), Error> {
+        let e = "connection manager not found";
+        let server = self.get_connection_manager().ok_or(e)?.get_server_addr();
+
+        let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
+
+        let e = "connection state not found";
+        let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
+
+        // The handler request for reset the server connection
+        if state.proxy_handler.reset_connection() {
+            if let Err(err) = self.poll.registry().deregister(&mut state.mio_stream) {
+                log::trace!("{}", err);
+            }
+            // Closes the connection with the proxy
+            if let Err(err) = state.mio_stream.shutdown(Shutdown::Both) {
+                log::trace!("Shutdown 2 error \"{}\"", err);
+            }
+
+            log::info!("RESET {}", conn_info);
+
+            state.mio_stream = TcpStream::connect(server)?;
+
+            state.wait_read = true;
+            state.wait_write = true;
+
+            Self::update_mio_socket_interest(&mut self.poll, state)?;
+
+            return Ok(());
+        }
+
+        if smoltcp_closed || read_closed {
+            state.wait_read = false;
+            state.close_state |= SERVER_WRITE_CLOSED;
+            Self::update_mio_socket_interest(&mut self.poll, state)?;
+            self.check_change_close_state(&conn_info)?;
+            self.expect_smoltcp_send()?;
+        }
+        Ok(())
+    }
+
     fn mio_socket_event(&mut self, event: &Event) -> Result<(), Error> {
         if let Some(info) = self.find_info_by_udp_token(event.token()) {
             return self.receive_udp_packet_and_write_to_client(&info.clone());
@@ -1120,9 +1161,6 @@ impl<'a> TunToProxy<'a> {
             }
         };
 
-        let e = "connection manager not found";
-        let server = self.get_connection_manager().ok_or(e)?.get_server_addr();
-
         let mut block = || -> Result<(), Error> {
             if event.is_readable() || event.is_read_closed() {
                 let established = self
@@ -1135,40 +1173,7 @@ impl<'a> TunToProxy<'a> {
                     self.receive_dns_over_tcp_packet_and_write_to_client(&conn_info)?;
                     return Ok(());
                 } else {
-                    let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
-
-                    let e = "connection state not found";
-                    let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
-
-                    // The handler request for reset the server connection
-                    if state.proxy_handler.reset_connection() {
-                        if let Err(err) = self.poll.registry().deregister(&mut state.mio_stream) {
-                            log::trace!("{}", err);
-                        }
-                        // Closes the connection with the proxy
-                        if let Err(err) = state.mio_stream.shutdown(Shutdown::Both) {
-                            log::trace!("Shutdown 2 error \"{}\"", err);
-                        }
-
-                        log::info!("RESET {}", conn_info);
-
-                        state.mio_stream = TcpStream::connect(server)?;
-
-                        state.wait_read = true;
-                        state.wait_write = true;
-
-                        Self::update_mio_socket_interest(&mut self.poll, state)?;
-
-                        return Ok(());
-                    }
-
-                    if smoltcp_closed || event.is_read_closed() {
-                        state.wait_read = false;
-                        state.close_state |= SERVER_WRITE_CLOSED;
-                        Self::update_mio_socket_interest(&mut self.poll, state)?;
-                        self.check_change_close_state(&conn_info)?;
-                        self.expect_smoltcp_send()?;
-                    }
+                    self.read_from_smoltcp_client(&conn_info, event.is_read_closed())?;
                 }
 
                 // We have read from the proxy server and pushed the data to the connection handler.
