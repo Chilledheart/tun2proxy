@@ -1111,7 +1111,7 @@ impl<'a> TunToProxy<'a> {
         let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
 
         let e = "connection state not found";
-        let state = self.connection_map.get_mut(&conn_info).ok_or(e)?;
+        let state = self.connection_map.get_mut(conn_info).ok_or(e)?;
 
         // The handler request for reset the server connection
         if state.proxy_handler.reset_connection() {
@@ -1139,7 +1139,7 @@ impl<'a> TunToProxy<'a> {
             state.wait_read = false;
             state.close_state |= SERVER_WRITE_CLOSED;
             Self::update_mio_socket_interest(&mut self.poll, state)?;
-            self.check_change_close_state(&conn_info)?;
+            self.check_change_close_state(conn_info)?;
             self.expect_smoltcp_send()?;
         }
         Ok(())
@@ -1272,7 +1272,7 @@ impl<'a> TunToProxy<'a> {
                 break 'exit_point Err(Error::from(err));
             }
 
-            log::info!("Poll events: {}", events.iter().count());
+            // log::info!("Poll events: {}", events.iter().count());
 
             for event in events.iter() {
                 match event.token() {
@@ -1293,7 +1293,7 @@ impl<'a> TunToProxy<'a> {
             self.clearup_expired_connection()?;
             self.clearup_expired_dns_over_tcp()?;
 
-            log::info!("{} connections", self.connection_map.len());
+            // log::info!("{} connections", self.connection_map.len());
         };
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         handle.join().unwrap();
