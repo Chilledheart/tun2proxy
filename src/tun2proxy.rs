@@ -178,6 +178,7 @@ const IP_PACKAGE_MAX_SIZE: usize = 0xFFFF;
 struct ConnectionState {
     smoltcp_handle: SocketHandle,
     mio_stream: TcpStream,
+    mio_connected: bool,
     token: Token,
     proxy_handler: Box<dyn ProxyHandler>,
     close_state: u8,
@@ -702,9 +703,22 @@ impl<'a> TunToProxy<'a> {
     }
 
     // Returns whether the connection was closed.
-    fn limited_read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo) -> Result<bool, Error> {
+    fn limited_read_from_smoltcp_client(
+        &mut self,
+        conn_info: &ConnectionInfo,
+        mio_read_event: bool,
+    ) -> Result<bool, Error> {
         let e = "connection state not found";
         let state = self.connection_map.get_mut(conn_info).ok_or(e)?;
+
+        if mio_read_event {
+            // The function was called due to a READABLE interest. The socket is connected.
+            state.mio_connected = true;
+        } else if !state.mio_connected {
+            // The mio socket is not yet connected. Do not read.
+            return Ok(false);
+        }
+
         let smoltcp_socket = self.sockets.get_mut::<tcp::Socket>(state.smoltcp_handle);
         let buffer_capacity = smoltcp_socket.send_capacity() - smoltcp_socket.send_queue();
         if buffer_capacity == 0
@@ -801,7 +815,7 @@ impl<'a> TunToProxy<'a> {
         // Assume that there was an ACK that consumed some of the smoltcp TcpSocket's
         // tx buffer. Read the next chunk from the server socket. If there wasn't an ACK,
         // calling this is fine, too. Reading from the mio socket will just return EWOULDBLOCK.
-        self.read_from_smoltcp_client(info, false)?;
+        self.read_from_smoltcp_client(info, false, false)?;
         Ok(())
     }
 
@@ -902,6 +916,7 @@ impl<'a> TunToProxy<'a> {
             udp_data_cache: LinkedList::new(),
             dns_over_tcp_expiry: None,
             is_tcp_closed: false,
+            mio_connected: false,
         };
         Ok(state)
     }
@@ -1104,11 +1119,16 @@ impl<'a> TunToProxy<'a> {
         Ok(())
     }
 
-    fn read_from_smoltcp_client(&mut self, conn_info: &ConnectionInfo, read_closed: bool) -> Result<(), Error> {
+    fn read_from_smoltcp_client(
+        &mut self,
+        conn_info: &ConnectionInfo,
+        read_closed: bool,
+        mio_read_event: bool,
+    ) -> Result<(), Error> {
         let e = "connection manager not found";
         let server = self.get_connection_manager().ok_or(e)?.get_server_addr();
 
-        let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone())?;
+        let smoltcp_closed = self.limited_read_from_smoltcp_client(&conn_info.clone(), mio_read_event)?;
 
         let e = "connection state not found";
         let state = self.connection_map.get_mut(conn_info).ok_or(e)?;
@@ -1173,7 +1193,7 @@ impl<'a> TunToProxy<'a> {
                     self.receive_dns_over_tcp_packet_and_write_to_client(&conn_info)?;
                     return Ok(());
                 } else {
-                    self.read_from_smoltcp_client(&conn_info, event.is_read_closed())?;
+                    self.read_from_smoltcp_client(&conn_info, event.is_read_closed(), true)?;
                 }
 
                 // We have read from the proxy server and pushed the data to the connection handler.
