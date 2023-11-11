@@ -582,10 +582,15 @@ impl<'a> TunToProxy<'a> {
         state.dns_over_tcp_expiry = Some(Self::common_udp_life_timeout());
 
         let mut vecbuf = vec![];
-        Self::read_data_from_tcp_stream(&mut state.mio_stream, &mut state.is_tcp_closed, |data| {
-            vecbuf.extend_from_slice(data);
-            Ok(())
-        })?;
+        Self::read_data_from_tcp_stream(
+            &mut state.mio_stream,
+            IP_PACKAGE_MAX_SIZE,
+            &mut state.is_tcp_closed,
+            |data| {
+                vecbuf.extend_from_slice(data);
+                Ok(())
+            },
+        )?;
 
         let data_event = IncomingDataEvent {
             direction: IncomingDirection::FromServer,
@@ -1219,11 +1224,17 @@ impl<'a> TunToProxy<'a> {
         Ok(())
     }
 
-    fn read_data_from_tcp_stream<F>(stream: &mut TcpStream, is_closed: &mut bool, mut callback: F) -> Result<()>
+    fn read_data_from_tcp_stream<F>(
+        stream: &mut dyn std::io::Read,
+        buffer_size: usize,
+        is_closed: &mut bool,
+        mut callback: F,
+    ) -> std::io::Result<()>
     where
-        F: FnMut(&mut [u8]) -> Result<()>,
+        F: FnMut(&mut [u8]) -> std::io::Result<()>,
     {
-        let mut tmp: [u8; 4096] = [0_u8; 4096];
+        assert!(buffer_size > 0);
+        let mut tmp = vec![0_u8; buffer_size];
         loop {
             match stream.read(&mut tmp) {
                 Ok(0) => {
@@ -1243,7 +1254,7 @@ impl<'a> TunToProxy<'a> {
                         continue;
                     } else {
                         *is_closed = true;
-                        return Err(error.into());
+                        return Err(error);
                     }
                 }
             };
