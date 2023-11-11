@@ -1303,7 +1303,7 @@ impl<'a> TunToProxy<'a> {
                 break 'exit_point Err(Error::from(err));
             }
 
-            // log::info!("Poll events: {}", events.iter().count());
+            log::trace!("Poll events: {}", events.iter().count());
 
             for event in events.iter() {
                 match event.token() {
@@ -1324,7 +1324,7 @@ impl<'a> TunToProxy<'a> {
             self.clearup_expired_connection()?;
             self.clearup_expired_dns_over_tcp()?;
 
-            // log::info!("{} connections", self.connection_map.len());
+            log::trace!("{} connections", self.connection_map.len());
         };
         #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         handle.join().unwrap();
