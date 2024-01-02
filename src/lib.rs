@@ -12,6 +12,8 @@ use std::{
 };
 
 mod android;
+mod ios;
+mod context_interface;
 mod dns;
 pub mod error;
 mod http;
@@ -31,10 +33,22 @@ pub struct Proxy {
     pub credentials: Option<UserKey>,
 }
 
+#[derive(Clone, Debug)]
+pub struct IosContext {
+    pub context: *mut libc::c_void,
+    pub read_fd: libc::c_int,
+    pub get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
+    pub get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
+    pub free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
+    pub write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *const libc::c_void, *const libc::size_t, libc::c_int),
+}
+
 pub enum NetworkInterface {
     Named(String),
     #[cfg(target_family = "unix")]
     Fd(std::os::fd::RawFd),
+    #[cfg(target_os = "ios")]
+    Context(IosContext),
 }
 
 impl Proxy {
