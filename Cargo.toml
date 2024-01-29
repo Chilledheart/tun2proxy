@@ -41,6 +41,9 @@ fork = "0.1"
 android_logger = "0.13"
 jni = { version = "0.21", default-features = false }
 
+[target.'cfg(all(target_os = "linux", target_env = "ohos"))'.dependencies]
+ohos_hilog = "0.1.2"
+
 [dev-dependencies]
 ctor = "0.2"
 reqwest = { version = "0.11", default-features = false, features = [

@@ -12,6 +12,7 @@ use std::{
 };
 
 mod android;
+mod harmony;
 mod ios;
 mod context_interface;
 mod dns;
