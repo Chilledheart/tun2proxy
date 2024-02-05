@@ -19,7 +19,7 @@ pub unsafe extern "C" fn tun2proxy_init(
     get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
     get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
     free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
-    write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *const libc::c_void, *const libc::size_t, libc::c_int),
+    write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void, *const libc::size_t, libc::c_int),
     proxy_url: *const libc::c_char,
     tun_mtu: libc::c_int,
     log_level_int: libc::c_int,

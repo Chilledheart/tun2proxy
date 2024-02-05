@@ -41,7 +41,7 @@ pub struct IosContext {
     pub get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
     pub get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
     pub free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
-    pub write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *const libc::c_void, *const libc::size_t, libc::c_int),
+    pub write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void, *const libc::size_t, libc::c_int),
 }
 
 pub enum NetworkInterface {

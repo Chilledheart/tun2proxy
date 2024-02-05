@@ -19,7 +19,7 @@ pub struct ContextInterfaceDesc {
     get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
     get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
     free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
-    write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *const libc::c_void, *const libc::size_t, libc::c_int),
+    write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void, *const libc::size_t, libc::c_int),
     mtu: usize,
 }
 
@@ -35,7 +35,7 @@ impl ContextInterfaceDesc {
                         get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
                         get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
                         free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
-                        write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *const libc::c_void,  *const libc::size_t, libc::c_int),
+                        write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void,  *const libc::size_t, libc::c_int),
                         mtu: usize) -> io::Result<ContextInterfaceDesc> {
         Ok(ContextInterfaceDesc {
           context: context, read_fd: read_fd,
@@ -67,9 +67,9 @@ impl ContextInterfaceDesc {
         }
     }
 
-    pub fn send(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    pub fn send(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         unsafe {
-            let packet : *const libc::c_void = buffer.as_ptr() as *const libc::c_void;
+            let packet : *mut libc::c_void = buffer.as_ptr() as *mut libc::c_void;
             let packet_length : libc::size_t = buffer.len();
             (self.write_packets_fn)(self.context, &packet, &packet_length, 1);
             Ok(buffer.len() as usize)
@@ -204,7 +204,7 @@ impl phy::TxToken for TxToken {
         let mut lower = self.lower.borrow_mut();
         let mut buffer = vec![0; len];
         let result = f(&mut buffer);
-        match lower.send(&buffer[..]) {
+        match lower.send(&mut buffer[..]) {
             Ok(_) => {}
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                 // net_debug!("phy: tx failed due to WouldBlock")
