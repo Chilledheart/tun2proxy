@@ -20,7 +20,6 @@ pub struct ContextInterfaceDesc {
     get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
     free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
     write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void, *const libc::size_t, libc::c_int),
-    mtu: usize,
 }
 
 impl AsRawFd for ContextInterfaceDesc {
@@ -35,20 +34,14 @@ impl ContextInterfaceDesc {
                         get_read_packet_context_data_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> *const libc::c_void,
                         get_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void) -> libc::size_t,
                         free_read_packet_context_size_fn: unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void),
-                        write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void,  *const libc::size_t, libc::c_int),
-                        mtu: usize) -> io::Result<ContextInterfaceDesc> {
+                        write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void,  *const libc::size_t, libc::c_int)) -> io::Result<ContextInterfaceDesc> {
         Ok(ContextInterfaceDesc {
           context: context, read_fd: read_fd,
           get_read_packet_context_data_fn: get_read_packet_context_data_fn,
           get_read_packet_context_size_fn: get_read_packet_context_size_fn,
           free_read_packet_context_size_fn: free_read_packet_context_size_fn,
           write_packets_fn: write_packets_fn,
-          mtu: mtu
         })
-    }
-
-    pub fn interface_mtu(&self) -> io::Result<usize> {
-        Ok(self.mtu)
     }
 
     pub fn recv(&mut self) -> io::Result<(*mut libc::c_void, *mut libc::c_void)> {
@@ -110,8 +103,7 @@ impl ContextInterface {
           context.get_read_packet_context_data_fn,
           context.get_read_packet_context_size_fn,
           context.free_read_packet_context_size_fn,
-          context.write_packets_fn,
-          mtu)?;
+          context.write_packets_fn)?;
         Ok(ContextInterface {
             lower: Rc::new(RefCell::new(lower)),
             mtu,
@@ -133,9 +125,9 @@ impl Device for ContextInterface {
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         let mut lower = self.lower.borrow_mut();
-        let mut get_read_packet_context_data_fn = lower.get_read_packet_context_data_fn;
-        let mut get_read_packet_context_size_fn = lower.get_read_packet_context_size_fn;
-        let mut free_read_packet_context_size_fn = lower.free_read_packet_context_size_fn;
+        let get_read_packet_context_data_fn = lower.get_read_packet_context_data_fn;
+        let get_read_packet_context_size_fn = lower.get_read_packet_context_size_fn;
+        let free_read_packet_context_size_fn = lower.free_read_packet_context_size_fn;
         match lower.recv() {
             Ok((context, read_ctx)) => {
                 let rx = RxToken {
@@ -172,7 +164,7 @@ pub struct RxToken {
 }
 
 impl phy::RxToken for RxToken {
-    fn consume<R, F>(mut self, f: F) -> R
+    fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {

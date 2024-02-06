@@ -22,7 +22,7 @@ pub unsafe extern "C" fn tun2proxy_init(
     write_packets_fn: unsafe extern "C" fn(*mut libc::c_void, *const *mut libc::c_void, *const libc::size_t, libc::c_int),
     proxy_url: *const libc::c_char,
     tun_mtu: libc::c_int,
-    log_level_int: libc::c_int,
+    _log_level_int: libc::c_int,
     dns_over_tcp: libc::c_int,
 ) -> libc::c_int {
 
